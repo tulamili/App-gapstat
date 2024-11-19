@@ -1,0 +1,149 @@
+#!/usr/bin/perl 
+use 5.014 ; use warnings ; 
+use Time::HiRes qw [ gettimeofday tv_interval ] ;
+my ${ dt_start } = [ gettimeofday ] ; 
+use Encode qw[ decode_utf8 encode_utf8 ] ; 
+use Getopt::Std ; getopts '@:=i:R:' , \my %o  ; 
+use Term::ANSIColor qw[ color :constants ] ; $Term::ANSIColor::AUTORESET = 1 ;
+use FindBin qw[ $Script ] ; 
+use List::Util qw[ max uniq ] ; 
+use Scalar::Util qw [ dualvar ]  ;  # dualvar は num, string の順である。
+
+$/ = $o{R} ? "\r\n" : "\n" ;  # 入力の改行文字に関して。Windows形式なら -R 1 が指定される。
+* d3 = exists $o{','} && $o{','} eq 0 ? sub{$_[0]} : sub { $_[0] =~ s/(?<=\d)(?=(\d\d\d)+($|\D))/,/gr } ;
+#* decode = exists $o{u} && $o{u} eq 0 ? * decode_utf8 : sub ( $ ) { $_[0] } ; 
+$o{'@'} //= 15 ; # 何秒おきにアラームを発生させるか
+my $help = 0  ; # オンラインヘルプの文面の表示をしたか否か。
+my $readLines  ; # 読み取った行数
+
+$SIG{INT} = sub { exit } ;
+$SIG{ALRM} = sub { 
+  my $n = $.  =~ s/(?<=\d)(?=(\d\d\d)+($|\D))/,/gr ; # 3桁ごとに区切る。
+  say STDERR GREEN "$. lines read ($Script). " , scalar localtime ; 
+  alarm $o{'@'} ;
+} ; 
+alarm $o{'@'} ;
+
+my %ls ; # Longgest Sequence 最も長い、間隙のない数列についての情報。(最初と最後を見たいかも)
+my %bg ; # Biggest Gap 最も大きな勧化についての情報。(最初と最後を見たいかも)
+my %gd ; # Gap Distribution 間隙の広さについての分布。 $gd{ gap } で 間の広さが gap であるものの、頻度を格納。
+my %gdw1 ; # w = Where ; それが発生した場所の最初
+my %gdw2 ; # w = Where ; それが最後に発生した場所(行番号)
+
+# 以下の lc は、 longest chain . 
+my %lc ; #  @{ $lc{ maxgap } } により、「どこwまで何個n続いたか、最後の文字列sが何であったかを示す。(dualvar n,"w:s"で格納)」の最長のリスト
+my %lc0 ; # @lc を算出するための、一時的な格納場所
+#my %gs ; # 存在したことのある gapの絶対値の集合が keys になる。
+#my $mg = 0 ; # max gap ; ギャップの絶対値の最大値
+
+my $last ; # 直前に読んだ行文字列
+while( <> ) { 
+  chomp ; 
+  next if ! defined $last ;
+  my $gap = $_ - $last ;
+  $gd{ $gap } ++ ; 
+  $gdw1 { $gap } //= dualvar $. , $_ ;
+  $gdw2 { $gap }   = dualvar $. , $_ ;
+ 
+  for ( uniq map { abs $_ } keys %gd  ) { 
+    if ( $_ < abs $gap ) 
+    {
+      my $nondel = 0 ; 
+      if ( ! defined $lc { $_ } [ 0 ] ) 
+      { 
+        $lc { $_ } [ 0 ] = $lc0 { $_ } ;
+      } 
+      elsif ( $lc { $_ } [ 0 ] < $lc0 { $_ } ) 
+      { 
+        @{ $lc { $_ } } = ( $lc0 { $_ } ) ; # この左辺が長さ2以上でも1だけのものに置き換える。
+      }
+      elsif ( $lc { $_ } [ 0 ] == $lc0 { $_ } )
+      {
+        push @{ $lc { $_ } } , $lc0 { $_ } ;
+      }
+      else {
+        $nondel = 1 ; 
+      }
+  
+      $lc0 { $_ } = undef if $nondel = 0 ; 
+    } 
+    else
+    {
+      $lc0 { $_ } =  dualvar 0 , "$.:$_" if ! defined $lc0 { $_ } ; 
+      $lc0 { $_ } ++ ; # 前の行の本体が実行されて、数値として 0 の場合は 1になる。
+    }
+  }
+} continue {
+  $last = $_ ;
+} 
+
+
+## 出力 : 
+# gap と頻度
+say join "\t", map { UNDERLINE $_ } 'Gaps:' , 'gap freq' , 'end line: contents (X first and last)' ; 
+for ( sort { $a <=> $b } keys %gd ) {
+  say join "\t" , '', $_ , $gd { $_ }, & ww ( $gdw1{$_} , $gdw2{$_} ) ; 
+}
+
+# longest length と max gap 
+say join "\t", map { UNDERLINE $_ }  "Chains:" , "max |gap|" , "longest sequence length: start line" ; 
+for ( sort {$a<=>$b} uniq map { abs $_ } keys %gd  ) { 
+  my @chains = defined $lc{$_} ? @{ $lc {$_} } : () ; # それだけの $_ つまり max abs gap を持つものの、リストを取り出す。
+  my $Length = defined $chains[0] ? $chains [0] + 0 : "NA" ; # 本当は(バグってなければ)、どの要素を取ってきても良い。その数値部分(dualvar) を取り出す。それは最長長さ。
+  say join "\t" , '' , $_ , $Length, map { $_ . ''} @chains ; 
+}
+
+
+sub ww ( $$ ) { 
+  my ($n1,$n2,$w1,$w2) = ( $_[0].'' , $_[1].'' , $_[0]+0, $_[1]+0 ) ;
+  #return $n1 . (GREEN "($w1)")  if $w1 == $w2 ;
+  #return $n1 . (GREEN "($w1)") . "\t" . $n2 . (GREEN "($w2)") 
+  return "$w1: $n1"  if $w1 == $w2 ;
+  return "$w1: $n1\t$w2: $n2" ;
+}
+
+END {
+  exit if $help ;
+  my $procsec = sprintf "%.5f", tv_interval ${ dt_start } ; #time - $time0 ; # このプログラムの処理にかかった秒数。比較する2個の時刻は秒単位なので、±1秒未満の誤差は発生する。
+  $readLines //= $. ; # Ctrl+Cの連打で必要となる処理。
+  return if ($o{2}//'') eq 0 ; 
+  my $linenumeral = $readLines > 1 ? 'lines' : 'line' ; 
+  print STDERR BOLD FAINT ITALIC & d3 ( $readLines ) . " $linenumeral read" ; 
+  my $s = tv_interval $dt_start , [ gettimeofday ] ; 
+  say STDERR BOLD FAINT ITALIC " -- $Script ; " . $procsec . " sec. in process" ;
+}
+
+## ヘルプの扱い
+sub VERSION_MESSAGE {}
+sub HELP_MESSAGE {
+  use FindBin qw[ $Script ] ; 
+  $ARGV[1] //= '' ;
+  open my $FH , '<' , $0 ;
+  while(<$FH>){
+    s/\$0/$Script/g ;
+    print $_ if s/^=head1// .. s/^=cut// and $ARGV[1] =~ /^o(p(t(i(o(ns?)?)?)?)?)?$/i ? m/^\s+\-/ : 1;
+  }
+  close $FH ;
+  exit 0 ;
+}
+=encoding utf8
+
+=head1 $0 
+
+改行区切りで数値を読み取る。主な使い方は、連番でない場所を見つける。
+ * 最も大きな空き(整数の抜けている箇所)を見つける。
+ * 開いたところの最初と最後を見つける。
+ * 最も長い連続した(i.e.空きのない) 数の連続を見つける。
+
+オプション : 
+
+ -=     : 1行目を読み飛ばす。
+ -i N   : 間隔を指定。数値Nより小さな差分は "連続している(空きがない)" と見なす。未指定なら1。
+
+ -R 1   : 改行文字が Windows 形式 すなわち \r\n に対応。
+
+開発メモ : 
+  * 昇順のみならず降順にも対応する。 -i で負の数を指定することで対応するかも。
+  * 全角文字に対しても対応したい。
+  * gapstat で無くて gapstat と名前を変えたい。
+=cut
