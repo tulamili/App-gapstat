@@ -27,14 +27,14 @@ $SIG{ALRM} = sub {
 alarm $o{'@'} ;
 
 my %gd ; # Gap Distribution 間隙の広さについての分布。 $gd{ gap } で 間の広さが gap であるものの、頻度を格納。
-my %gdw1 ; # w = Where ; それが発生した場所の最初
-my %gdw2 ; # w = Where ; それが最後に発生した場所(行番号)
+my %gw1 ; # w = Where ; それが発生した場所の最初
+my %gw2 ; # w = Where ; それが最後に発生した場所(行番号)
 
 # 以下の lc は、 longest chain . 
 our %lc ; #  @{ $lc{Gap} } により、dualvar n,"w:s"。何個(n)続いた、何行目(w)の文字列(s)。各Gapでnは出来るだけ大きく(長く)する。
 our %lc0 ; # @lc を算出するための、一時的な格納場所
 my $head = <> if $o{'='} ; 
-my $prev ; # 直前の行について [ $. , $str ] を格納。 ただし、[ , ] は dualvar である。
+my $prev ; # 直前の行について [ $. , $str ] を格納。 (ただし、[ , ] は dualvar である。
 while( <> ) { 
   my $neof = 1 ; # 毎行読み取り終わった場合の、最後の処理が終わったら 1 になる。
   $_ = decode ($_) ;
@@ -44,8 +44,8 @@ while( <> ) {
   if ( defined $prev ) { 
     $gap = $_ - ($prev.'') ;
     $gd { $gap } ++ ; 
-    $gdw1 { $gap } //= dualvar $prev , sprintf "%s ~ %s:%s" , $prev . '' , $. , $_ ; # <-- 数段階トリッキー。
-    $gdw2 { $gap }   = dualvar $prev , sprintf "%s ~ %s:%s" , $prev . '' , $. , $_ ;
+    $gw1 { $gap } //= dualvar $prev , sprintf "%s ~ %s:%s" , $prev . '' , $. , $_ ; # <-- 数段階トリッキー。
+    $gw2 { $gap }   = dualvar $prev , sprintf "%s ~ %s:%s" , $prev . '' , $. , $_ ;
   }
   next if ($o{L}//'') eq 0 ;
   my $str = $_ ; 
@@ -90,7 +90,7 @@ for ( grep { $_ != "Inf" } sort { $a <=> $b } uniq map { abs $_ } keys %gd  ) {
 sub gap1output () { # 出力1. Gapsの出力 
   say join "\t", map { UNDERLINE $_ } 'gap', 'frq' , 'first' , 'prev (line:content by "start ~ end")' ; 
   for ( grep { $_ != "Inf" } sort { $a <=> $b } keys %gd ) {
-    say join "\t" , $_ , $gd { $_ }, & ww ( $gdw1{$_} , $gdw2{$_} ) ; 
+    say join "\t" , $_ , $gd { $_ }, & ww ( $gw1{$_} , $gw2{$_} ) ; 
   }
 }
 # 関数 where から where 
