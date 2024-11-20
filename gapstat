@@ -28,7 +28,9 @@ alarm $o{'@'} ;
 
 my %gd ; # Gap Distribution 間隙の広さについての分布。 $gd{ gap } で 間の広さが gap であるものの、頻度を格納。
 my %gw1 ; # w = Where ; それが発生した場所の最初
-my %gw2 ; # w = Where ; それが最後に発生した場所(行番号)
+my %gw2 ; # w = Where ; それが最後に発生した場所(行番号)。$gw2{gap} は gapの大きさの間隙が最後に生じた両端の場所と値を示す。
+my %g2w ; # $g2w{gap}により、大きさgapの間隙が生じた最後の場所の(始まりでなく)終わりの場所(行数)をw で示す。
+my %g2v ; # $g2v{gap}により、大きさgapの間隙が生じた最後の場所の(始まりでなく)終わりの値をv で示す。 value のつもり
 
 # 以下の lc は、 longest chain . 
 our %lc ; #  @{ $lc{Gap} } により、dualvar n,"w:s"。何個(n)続いた、何行目(w)の文字列(s)。各Gapでnは出来るだけ大きく(長く)する。
@@ -45,7 +47,10 @@ while( <> ) {
     $gap = $_ - ($prev.'') ;
     $gd { $gap } ++ ; 
     $gw1 { $gap } //= dualvar $prev , sprintf "%s ~ %s:%s" , $prev . '' , $. , $_ ; # <-- 数段階トリッキー。
-    $gw2 { $gap }   = dualvar $prev , sprintf "%s ~ %s:%s" , $prev . '' , $. , $_ ;
+    $gw2 { $gap } =   dualvar $prev , sprintf "%s ~ %s:%s" , $prev . '' , $. , $_ ;
+    # next if ($o{L}//'') eq 0 ;
+    $g2w { $gap } = $. ;  # この変数は、2番目の出力表のための計算に使う。
+    $g2v { $gap } = $_ ;  # この変数は、2番目の出力表のための計算に使う。  
   }
   next if ($o{L}//'') eq 0 ;
   my $str = $_ ; 
@@ -60,8 +65,8 @@ while( <> ) {
   ULOOP : 
   #for ( sort {$a<=>$b} uniq map { abs $_ } keys %gd ) { # $_ は「既存ギャップ」。 (許容ギャップという呼び名も考えたけど、使い道無しかも。)
   #for ( 0.. max grep {$_ != "Inf"} abs keys %gd  ) { 
-  for ( 0 .. 30 ) { 
-    #if ( $_ < abs $gap && defined $lc0 { $_ } )  { ## 各既存ギャップが直前ギャップより小なら、その各々の lc0 はlcで条件が合えば記録し、いずれの場合もリセット。
+  #for ( 0 .. 30 ) { 
+  for ( uniq map { abs $_ } keys %gd ) {
     if ( $_ < abs $gap && defined $lc0 { $_ } || $neof == 0 && defined $lc0 { $_ } )  {
       sub se($$){ dualvar $_[0] , sprintf "%s ~ %s:%s" , $_[0].'', $_[1]+0, $_[1].'' } # 関数 start end のつもり。1回しか使わないので、ここに書いた。
       my $put = se $lc0{$_}, $prev ; # $lc0{gap}で[連続長,最初の場所:最初の値] 。$prevは[$.,$_]。つまり、返り値は、[連続長,初所:初値 ~ 終所:終値]。
