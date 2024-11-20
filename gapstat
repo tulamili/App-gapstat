@@ -14,7 +14,7 @@ use utf8 ;
 $/ = $o{R} ? "\r\n" : "\n" ;  # 入力の改行文字に関して。Windows形式なら -R 1 が指定されることになる。
 * decode = ($o{u}//'') ne 0 ? * decode_utf8 : sub ( $ ) { $_[0] } ; 
 binmode STDOUT , "utf8" unless ($o{u}//'') eq 0 ;
-$o{'@'} //= 10 ; # 何秒おきにアラームを発生させるか
+$o{'@'} //= 3 ; # 何秒おきにアラームを発生させるか
 my $help = 0  ; # オンラインヘルプの文面の表示をしたか否か。
 my $readLines  ; # 読み取った行数
 
@@ -26,75 +26,73 @@ $SIG{ALRM} = sub {
 } ; 
 alarm $o{'@'} ;
 
-my %ls ; # Longgest Sequence 最も長い、間隙のない数列についての情報。(最初と最後を見たいかも)
-my %bg ; # Biggest Gap 最も大きな勧化についての情報。(最初と最後を見たいかも)
 my %gd ; # Gap Distribution 間隙の広さについての分布。 $gd{ gap } で 間の広さが gap であるものの、頻度を格納。
 my %gdw1 ; # w = Where ; それが発生した場所の最初
 my %gdw2 ; # w = Where ; それが最後に発生した場所(行番号)
 
 # 以下の lc は、 longest chain . 
-my %lc ; #  @{ $lc{ maxgap } } により、「何個n続いたか、何行目(whereのw)の文字列sが何であったかを示す。(dualvar n,"w:s"で格納)」の最長のリスト
-my %lc0 ; # @lc を算出するための、一時的な格納場所
-
-# 関数 Start End
-sub se ( $$ ) { 
-  return dualvar $_[1] + 0 , sprintf "%s ~ %s:%s" , $_[0] , $_[1] + 0 , $_[1] . '' ; 
-}
-
-# 関数 where から where 
-sub ww ( $$ $ ) { 
-  my ($n1,$n2,$w1,$w2) = ( $_[0].'' , $_[1].'' , $_[0]+0, $_[1]+0 ) ;
-  return $w1 == $w2 ? "$w1:$n1" : "$w1:$n1\t$w2:$n2" ; 
-}
-
+our %lc ; #  @{ $lc{Gap} } により、dualvar n,"w:s"。何個(n)続いた、何行目(w)の文字列(s)。各Gapでnは出来るだけ大きく(長く)する。
+our %lc0 ; # @lc を算出するための、一時的な格納場所
 my $head = <> if $o{'='} ; 
-my $last ; # 直前の行について、dualvar形式で、 dualvar $. , $str を格納。
+my $prev ; # 直前の行について、dualvar形式で、 dualvar $. , $str を格納。
 while( <> ) { 
+  my $neof = 1 ; # 毎行読み取り終わった場合の、最後の処理が終わったら 1 になる。
   $_ = decode ($_) ;
-  s/\s//g ; # chomp もしなくてよくなる。
+  s/\s//g ; # chomp もしなくて良くなっている。
   y/０-９/0-9/ unless ($o{u}//'') eq 0 ;  
-  next if ! defined $last ;
-  my $gap = $_ - ($last.'') ;
-  $gd { $gap } ++ ; 
-  $gdw1 { $gap } //= dualvar $last + 0  , sprintf "%s ~ %s:%s" , $last . '' , $. , $_ ; # <-- 数段階トリッキー。
-  $gdw2 { $gap }   = dualvar $last + 0  , sprintf "%s ~ %s:%s" , $last . '' , $. , $_ ;
+  my $gap = undef ; # 直前の行の内容数値との差分を格納する。
+  if ( defined $prev ) { 
+    $gap = $_ - ($prev.'') ;
+    $gd { $gap } ++ ; 
+    $gdw1 { $gap } //= dualvar $prev + 0  , sprintf "%s ~ %s:%s" , $prev . '' , $. , $_ ; # <-- 数段階トリッキー。
+    $gdw2 { $gap }   = dualvar $prev + 0  , sprintf "%s ~ %s:%s" , $prev . '' , $. , $_ ;
+  }
   next if ($o{L}//'') eq 0 ;
+
   my $str = $_ ; 
-  for ( uniq map { abs $_ } keys %gd  ) { # $_ は「許容ギャップ」 となる。(間隙の絶対値)
-    if ( abs $gap > $_ && defined $lc0 { $_ } ) 
-    {
-      my $nondel = 0 ;
-      my $put = se ( $lc0 { $_ } , $last ) if defined $lc0 { $_ } ; 
-      if ( ! defined $lc { $_ } || $lc { $_ } [ 0 ] < $lc0 { $_ } ) { @{ $lc { $_ } } = ($put) } # $lc0 { $_ } 
-      elsif ( $lc { $_ } [ 0 ] == $lc0 { $_ } )  { push @{ $lc { $_ } } , $put } 
-      else { $nondel = 1 }
-      $lc0 { $_ } = undef if $nondel == 0 ; 
-    } 
-    else
-    {
-      $lc0 { $_ } = dualvar 0 , "$.:$str" if ! defined $lc0 { $_ } ; 
-      $lc0 { $_ } = dualvar 1 + $lc0 { $_ } , ''. $lc0 { $_ } ; # 前の行の本体が実行されて、数値として 0 の場合は 1になる。
+  if ( ! defined $gap ) { $lc0 {Inf} = dualvar 1 , "$.:$str" ; $gd {Inf} = 0 ; next }  # $. の部分は 1 でも良いかも。 <-- - 
+  if ( $gd { $gap } == 1 ) { # もしも、そのギャップの値での記録が 1 個つまり初めてだった時
+    #my $max = max grep { abs $gap >= $_ } map { abs $_ } keys %gd ; # max 関数の対象が空であれば、返り値は undef となる。
+    #$lc0 { abs $gap } = defined $max ? $lc0 { $max } : $lc0{Inf} ; # if defined $max ; 
+  }
+
+  ULOOP : 
+  for ( uniq map { abs $_ } keys %gd ) { # $_ は「既存ギャップ」。 (許容ギャップという呼び名も考えたけど、使い道無しかも。)
+    if ( abs $gap > $_ && defined $lc0 { $_ } )  { ## 各既存ギャップが直前ギャップより小なら、その各々の lc0 はlcで条件が合えば記録し、いずれの場合もリセット。
+      sub se($$){ dualvar $_[0] , sprintf "%s ~ %s:%s" , $_[0].'', $_[1]+0, $_[1].'' } # 関数 start end のつもり。1回しか使わないので、ここに書いた。
+      my $put = se $lc0{$_}, $prev ; # $lc0{gap}で[連続長,最初の場所:最初の値] 。$prevは[$.,$_]。つまり、返り値は、[連続長,初所:初値 ~ 終所:終値]。
+      if ( !defined $lc{$_} || $lc{$_}[0] < $lc0{$_} ) {  @{ $lc{$_} } = ($put)  } # $lc{$_}が存在しないか、その中身がチェーン長がlc0より短いなら、lc0で上書き。
+      elsif ( $lc{$_}[0] == $lc0{$_} )  { push @{ $lc{$_} } , $put } # $lc{$_}の中身について、連続長が $lc0{$_} に等しいなら、追加する。
+      delete $lc0 { $_ }  ; 
+    }else{
+      $lc0{$_} = defined $lc0{$_} ? dualvar 1 + $lc0{$_} , $lc0{$_} : dualvar 1 , "$.:$str" ;  # <-- - 1を0にしたら正しい値になった。なぜ?
     }
   }
+  $prev = dualvar $. , $_  and $neof = 0 or goto ULOOP if eof && $neof ; # and or xor は、やり過ぎかもか。
 } continue {
-  $last = dualvar $. , $_ ; #$_ ;
-} 
-
+  $prev = dualvar $. , $_ ; #
+}   
 & gap1output unless ($o{G}//'') eq 0 ; 
 exit 0 if ($o{L}//'') eq 0 ; 
-# 出力2. longest length と max gap 
+
+# 出力2. longest length と max gap #### 
 say join "\t", map { UNDERLINE $_ }  "|gap|<=" , "lenmax" , "line:content" ; 
 for ( sort { $a <=> $b } uniq map { abs $_ } keys %gd  ) { 
   my @chains = defined $lc{$_} ? @{ $lc {$_} } : () ; # それだけの $_ つまり max abs gap を持つものの、リストを取り出す。
-  my $Length = defined $chains[0] ? $chains [0] + 0 : "NA" ; # 本当は(バグってなければ)、どの要素を取ってきても良い。その数値部分(dualvar) を取り出す。それは最長長さ。
+  my $Length = defined $chains[0] ? $chains [0] +0 : "NA" ; # 本当は(バグってなければ)、どの要素を取ってきても良い。その数値部分(dualvar) を取り出す。それは最長長さ。
   say join "\t" , $_ , $Length, map { $_ } @chains ; 
 }
 
 sub gap1output () { # 出力1. Gapsの出力 
-  say join "\t", map { UNDERLINE $_ } 'gap', 'frq' , 'first' , 'last (line:content by "start ~ end")' ; 
-  for ( sort { $a <=> $b } keys %gd ) {
-    say join "\t" , $_ , $gd { $_ }, & ww ( $gdw1{$_} , $gdw2{$_} , $_ ) ; 
+  say join "\t", map { UNDERLINE $_ } 'gap', 'frq' , 'first' , 'prev (line:content by "start ~ end")' ; 
+  for ( grep { $_ != "Inf" } sort { $a <=> $b } keys %gd ) {
+    say join "\t" , $_ , $gd { $_ }, & ww ( $gdw1{$_} , $gdw2{$_} ) ; 
   }
+}
+# 関数 where から where 
+sub ww ( $$ ) { 
+  my ($n1,$n2,$w1,$w2) = ( $_[0].'' , $_[1].'' , $_[0]+0, $_[1]+0 ) ;
+  return $w1 == $w2 ? "$w1:$n1" : "$w1:$n1\t$w2:$n2" ; 
 }
 
 END {
@@ -127,17 +125,16 @@ sub HELP_MESSAGE {
 
 改行区切りで数値を読み取る。主な使い方は、連番でない場所を見つける。
  * 最も大きな空き(整数の抜けている箇所)を見つける。
- * 開いたところの最初と最後を見つける。
  * 最も長い連続した(i.e.空きのない) 数の連続を見つける。
 
 オプション : 
-
  -=     : 1行目を読み飛ばす。
  -G 0   : ギャップ(間隙)の統計表を出力しない。(2番目の表示を見やすくするため)
  -L 0   ; 2番目の出力表(許容ギャップごとに数列の最大長とその例を示す)を出力しない。このことで計算量が節約出来る。
  -R 1   : 改行文字が Windows 形式 すなわち \r\n に対応。
  -u 0   : utf8と見なさない。全角の０から９までを数値と見なすことをしない(実験的であり今後の開発のために残す)。
  -@ N   : N秒おきにどこまで読み取ったかを、標準エラー出力に出力する。
+ --help : このオンラインヘルプの文面を表示する。
 
 開発メモ : 
   * 2番目の表で、ギャップが異なっても、残りが同じ表示になる場合に、一つにまとめる(大きい方のギャップの値に合わせる)ようにせよ。
