@@ -3,16 +3,18 @@ use 5.014 ; use warnings ;
 use Time::HiRes qw [ gettimeofday tv_interval ] ;
 my ${ dt_start } = [ gettimeofday ] ; 
 use Encode qw[ decode_utf8 encode_utf8 ] ; 
-use Getopt::Std ; getopts '@:=i:R:' , \my %o  ; 
+use Getopt::Std ; getopts '@:=i:R:u:' , \my %o  ; 
 use Term::ANSIColor qw[ color :constants ] ; $Term::ANSIColor::AUTORESET = 1 ;
 use FindBin qw[ $Script ] ; 
 use List::Util qw[ max uniq ] ; 
 use Scalar::Util qw [ dualvar ]  ;  # dualvar は num, string の順である。
+use utf8 ; 
 
-$/ = $o{R} ? "\r\n" : "\n" ;  # 入力の改行文字に関して。Windows形式なら -R 1 が指定される。
 * d3 = exists $o{','} && $o{','} eq 0 ? sub{$_[0]} : sub { $_[0] =~ s/(?<=\d)(?=(\d\d\d)+($|\D))/,/gr } ;
-#* decode = exists $o{u} && $o{u} eq 0 ? * decode_utf8 : sub ( $ ) { $_[0] } ; 
-$o{'@'} //= 15 ; # 何秒おきにアラームを発生させるか
+$/ = $o{R} ? "\r\n" : "\n" ;  # 入力の改行文字に関して。Windows形式なら -R 1 が指定されることになる。
+* decode = ($o{u}//'') ne 0 ? * decode_utf8 : sub ( $ ) { $_[0] } ; 
+binmode STDOUT , "utf8" unless ($o{u}//'') eq 0 ;
+$o{'@'} //= 10 ; # 何秒おきにアラームを発生させるか
 my $help = 0  ; # オンラインヘルプの文面の表示をしたか否か。
 my $readLines  ; # 読み取った行数
 
@@ -36,70 +38,67 @@ my %lc0 ; # @lc を算出するための、一時的な格納場所
 #my %gs ; # 存在したことのある gapの絶対値の集合が keys になる。
 #my $mg = 0 ; # max gap ; ギャップの絶対値の最大値
 
+my $head = <> if $o{'='} ; 
+
 my $last ; # 直前に読んだ行文字列
 while( <> ) { 
-  chomp ; 
+  $_ = decode ($_) ;
+  s/\s//g ; # chomp もしなくてよくなる。
+  y/０-９/0-9/ unless ($o{u}//'') eq 0 ;  
   next if ! defined $last ;
   my $gap = $_ - $last ;
   $gd{ $gap } ++ ; 
   $gdw1 { $gap } //= dualvar $. , $_ ;
   $gdw2 { $gap }   = dualvar $. , $_ ;
  
+  my $str = $_ ; 
   for ( uniq map { abs $_ } keys %gd  ) { 
-    if ( $_ < abs $gap ) 
+    if ( abs $gap > $_ && defined $lc0 { $_ } ) 
     {
       my $nondel = 0 ; 
-      if ( ! defined $lc { $_ } [ 0 ] ) 
-      { 
-        $lc { $_ } [ 0 ] = $lc0 { $_ } ;
-      } 
-      elsif ( $lc { $_ } [ 0 ] < $lc0 { $_ } ) 
-      { 
-        @{ $lc { $_ } } = ( $lc0 { $_ } ) ; # この左辺が長さ2以上でも1だけのものに置き換える。
-      }
-      elsif ( $lc { $_ } [ 0 ] == $lc0 { $_ } )
-      {
-        push @{ $lc { $_ } } , $lc0 { $_ } ;
-      }
-      else {
-        $nondel = 1 ; 
-      }
-  
-      $lc0 { $_ } = undef if $nondel = 0 ; 
+      if ( ! defined $lc { $_ } ) { push @{ $lc { $_ } } , $lc0 { $_ } ; } 
+      elsif ( $lc { $_ } [ 0 ] < $lc0 { $_ } )  {  @{ $lc { $_ } } = ( $lc0 { $_ } ) ; } # この左辺が長さ2以上でも1だけのものに置き換える。
+      elsif ( $lc { $_ } [ 0 ] == $lc0 { $_ } )  { push @{ $lc { $_ } } , $lc0 { $_ } ; }
+      else { $nondel = 1 ;  }
+      $lc0 { $_ } = undef if $nondel == 0 ; 
     } 
     else
     {
-      $lc0 { $_ } =  dualvar 0 , "$.:$_" if ! defined $lc0 { $_ } ; 
-      $lc0 { $_ } ++ ; # 前の行の本体が実行されて、数値として 0 の場合は 1になる。
+      $lc0 { $_ } = dualvar 0 , "$.:$str~" if ! defined $lc0 { $_ } ; 
+      $lc0 { $_ } = dualvar 1+$lc0{$_}, ''. $lc0{$_} ; # 前の行の本体が実行されて、数値として 0 の場合は 1になる。
     }
   }
 } continue {
   $last = $_ ;
 } 
-
-
+#exit 0 ; 
 ## 出力 : 
+
+# 出力1. Gapsの出力
 # gap と頻度
-say join "\t", map { UNDERLINE $_ } 'Gaps:' , 'gap freq' , 'end line: contents (X first and last)' ; 
+#say join "\t", map { UNDERLINE $_ } 'Gaps:' , 'gap freq' , 'end line: contents (X first and last)' ; 
+say join "\t", map { UNDERLINE $_ } 'gap', 'frq' , 'first' , 'last (line:content by "start ~ end")' ; 
 for ( sort { $a <=> $b } keys %gd ) {
-  say join "\t" , '', $_ , $gd { $_ }, & ww ( $gdw1{$_} , $gdw2{$_} ) ; 
+  say join "\t" , $_ , $gd { $_ }, & ww ( $gdw1{$_} , $gdw2{$_} , $_ ) ; 
 }
 
 # longest length と max gap 
 say join "\t", map { UNDERLINE $_ }  "Chains:" , "max |gap|" , "longest sequence length: start line" ; 
 for ( sort {$a<=>$b} uniq map { abs $_ } keys %gd  ) { 
   my @chains = defined $lc{$_} ? @{ $lc {$_} } : () ; # それだけの $_ つまり max abs gap を持つものの、リストを取り出す。
+  #my @chains =  @{ $lc {$_} } ; 
   my $Length = defined $chains[0] ? $chains [0] + 0 : "NA" ; # 本当は(バグってなければ)、どの要素を取ってきても良い。その数値部分(dualvar) を取り出す。それは最長長さ。
-  say join "\t" , '' , $_ , $Length, map { $_ . ''} @chains ; 
+  say join "\t" , '' , $_ , $Length, map { $_ } @chains ; 
 }
 
 
-sub ww ( $$ ) { 
+sub ww ( $$ $ ) { 
   my ($n1,$n2,$w1,$w2) = ( $_[0].'' , $_[1].'' , $_[0]+0, $_[1]+0 ) ;
+  my ($N1,$N2,$W1,$W2) = ( $n1 - $_[2] , $n2 - $_[2] , $w1 - 1 , $w2 - 1 ) ; # -$_[2]の箇所は、一度足したものをここで引いたという無駄ありとも言える。
   #return $n1 . (GREEN "($w1)")  if $w1 == $w2 ;
   #return $n1 . (GREEN "($w1)") . "\t" . $n2 . (GREEN "($w2)") 
-  return "$w1: $n1"  if $w1 == $w2 ;
-  return "$w1: $n1\t$w2: $n2" ;
+  return "$W1:$N1 ~ $w1:$n1"  if $w1 == $w2 ;
+  return "$W1:$N1 ~ $w1:$n1\t$W2:$N2 ~ $w2:$n2" ;
 }
 
 END {
@@ -108,9 +107,9 @@ END {
   $readLines //= $. ; # Ctrl+Cの連打で必要となる処理。
   return if ($o{2}//'') eq 0 ; 
   my $linenumeral = $readLines > 1 ? 'lines' : 'line' ; 
-  print STDERR BOLD FAINT ITALIC & d3 ( $readLines ) . " $linenumeral read" ; 
+  print STDERR BOLD FAINT ITALIC d3 ( $readLines ) . " $linenumeral read" ; 
   my $s = tv_interval $dt_start , [ gettimeofday ] ; 
-  say STDERR BOLD FAINT ITALIC " -- $Script ; " . $procsec . " sec. in process" ;
+  say STDERR BOLD FAINT ITALIC " -- $Script ; " . $procsec . " seconds in process" ;
 }
 
 ## ヘルプの扱い
@@ -138,8 +137,6 @@ sub HELP_MESSAGE {
 オプション : 
 
  -=     : 1行目を読み飛ばす。
- -i N   : 間隔を指定。数値Nより小さな差分は "連続している(空きがない)" と見なす。未指定なら1。
-
  -R 1   : 改行文字が Windows 形式 すなわち \r\n に対応。
 
 開発メモ : 
