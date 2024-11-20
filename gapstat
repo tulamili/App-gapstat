@@ -48,24 +48,28 @@ while( <> ) {
     $gdw2 { $gap }   = dualvar $prev + 0  , sprintf "%s ~ %s:%s" , $prev . '' , $. , $_ ;
   }
   next if ($o{L}//'') eq 0 ;
-
   my $str = $_ ; 
-  if ( ! defined $gap ) { $lc0 {Inf} = dualvar 1 , "$.:$str" ; $gd {Inf} = 0 ; next }  # $. の部分は 1 でも良いかも。 <-- - 
-  if ( $gd { $gap } == 1 ) { # もしも、そのギャップの値での記録が 1 個つまり初めてだった時
-    #my $max = max grep { abs $gap >= $_ } map { abs $_ } keys %gd ; # max 関数の対象が空であれば、返り値は undef となる。
-    #$lc0 { abs $gap } = defined $max ? $lc0 { $max } : $lc0{Inf} ; # if defined $max ; 
-  }
 
+  if ( ! defined $gap ) { $lc0 {Inf} = dualvar 1 , "$.:$str" ; $gd {Inf} = 0 ; next }  # $. の部分は 1 でも良いかも。 <-- - 
+=for comment
+  if ( $gd { $gap } == 1 ) { # もしも、そのギャップの値での記録が 1 個つまり初めてだった時
+    my $max = max grep { abs $gap >= $_ } map { abs $_ } keys %gd ; # max 関数の対象が空であれば、返り値は undef となる。
+    $lc0 { abs $gap } = defined $max ? $lc0 { $max } : $lc0{Inf} ; # if defined $max ; 
+  }
+=cut
   ULOOP : 
-  for ( uniq map { abs $_ } keys %gd ) { # $_ は「既存ギャップ」。 (許容ギャップという呼び名も考えたけど、使い道無しかも。)
-    if ( abs $gap > $_ && defined $lc0 { $_ } )  { ## 各既存ギャップが直前ギャップより小なら、その各々の lc0 はlcで条件が合えば記録し、いずれの場合もリセット。
+  #for ( sort {$a<=>$b} uniq map { abs $_ } keys %gd ) { # $_ は「既存ギャップ」。 (許容ギャップという呼び名も考えたけど、使い道無しかも。)
+  #for ( 0.. max grep {$_ != "Inf"} abs keys %gd  ) { 
+  for ( 0 .. 30 ) { 
+    #if ( $_ < abs $gap && defined $lc0 { $_ } )  { ## 各既存ギャップが直前ギャップより小なら、その各々の lc0 はlcで条件が合えば記録し、いずれの場合もリセット。
+    if ( $_ < abs $gap && defined $lc0 { $_ } || $neof == 0 && defined $lc0 { $_ } )  {
       sub se($$){ dualvar $_[0] , sprintf "%s ~ %s:%s" , $_[0].'', $_[1]+0, $_[1].'' } # 関数 start end のつもり。1回しか使わないので、ここに書いた。
       my $put = se $lc0{$_}, $prev ; # $lc0{gap}で[連続長,最初の場所:最初の値] 。$prevは[$.,$_]。つまり、返り値は、[連続長,初所:初値 ~ 終所:終値]。
       if ( !defined $lc{$_} || $lc{$_}[0] < $lc0{$_} ) {  @{ $lc{$_} } = ($put)  } # $lc{$_}が存在しないか、その中身がチェーン長がlc0より短いなら、lc0で上書き。
       elsif ( $lc{$_}[0] == $lc0{$_} )  { push @{ $lc{$_} } , $put } # $lc{$_}の中身について、連続長が $lc0{$_} に等しいなら、追加する。
       delete $lc0 { $_ }  ; 
-    }else{
-      $lc0{$_} = defined $lc0{$_} ? dualvar 1 + $lc0{$_} , $lc0{$_} : dualvar 1 , "$.:$str" ;  # <-- - 1を0にしたら正しい値になった。なぜ?
+    } elsif ( $_ >= abs $gap ) {
+      $lc0{$_} = defined $lc0{$_} ? dualvar 1+$lc0{$_} , $lc0{$_} : dualvar 2,  ($prev+0).":".$prev ; #"$.:$str" ;  # 0 ,
     }
   }
   $prev = dualvar $. , $_  and $neof = 0 or goto ULOOP if eof && $neof ; # and or xor は、やり過ぎかもか。
@@ -77,7 +81,7 @@ exit 0 if ($o{L}//'') eq 0 ;
 
 # 出力2. longest length と max gap #### 
 say join "\t", map { UNDERLINE $_ }  "|gap|<=" , "lenmax" , "line:content" ; 
-for ( sort { $a <=> $b } uniq map { abs $_ } keys %gd  ) { 
+for ( grep { $_ != "Inf" } sort { $a <=> $b } uniq map { abs $_ } keys %gd  ) { 
   my @chains = defined $lc{$_} ? @{ $lc {$_} } : () ; # それだけの $_ つまり max abs gap を持つものの、リストを取り出す。
   my $Length = defined $chains[0] ? $chains [0] +0 : "NA" ; # 本当は(バグってなければ)、どの要素を取ってきても良い。その数値部分(dualvar) を取り出す。それは最長長さ。
   say join "\t" , $_ , $Length, map { $_ } @chains ; 
