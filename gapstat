@@ -3,7 +3,7 @@ use 5.014 ; use warnings ;
 use Time::HiRes qw [ gettimeofday tv_interval ] ;
 my ${ dt_start } = [ gettimeofday ] ; 
 use Encode qw[ decode_utf8 encode_utf8 ] ; 
-use Getopt::Std ; getopts '@:=i:R:u:' , \my %o  ; 
+use Getopt::Std ; getopts '@:=G:L:R:u:' , \my %o  ; 
 use Term::ANSIColor qw[ color :constants ] ; $Term::ANSIColor::AUTORESET = 1 ;
 use FindBin qw[ $Script ] ; 
 use List::Util qw[ max uniq ] ; 
@@ -33,72 +33,70 @@ my %gdw1 ; # w = Where ; それが発生した場所の最初
 my %gdw2 ; # w = Where ; それが最後に発生した場所(行番号)
 
 # 以下の lc は、 longest chain . 
-my %lc ; #  @{ $lc{ maxgap } } により、「どこwまで何個n続いたか、最後の文字列sが何であったかを示す。(dualvar n,"w:s"で格納)」の最長のリスト
+my %lc ; #  @{ $lc{ maxgap } } により、「何個n続いたか、何行目(whereのw)の文字列sが何であったかを示す。(dualvar n,"w:s"で格納)」の最長のリスト
 my %lc0 ; # @lc を算出するための、一時的な格納場所
-#my %gs ; # 存在したことのある gapの絶対値の集合が keys になる。
-#my $mg = 0 ; # max gap ; ギャップの絶対値の最大値
+
+# 関数 Start End
+sub se ( $$ ) { 
+  return dualvar $_[1] + 0 , sprintf "%s ~ %s:%s" , $_[0] , $_[1] + 0 , $_[1] . '' ; 
+}
+
+# 関数 where から where 
+sub ww ( $$ $ ) { 
+  my ($n1,$n2,$w1,$w2) = ( $_[0].'' , $_[1].'' , $_[0]+0, $_[1]+0 ) ;
+  my ($N1,$N2,$W1,$W2) = ( $n1 - $_[2] , $n2 - $_[2] , $w1 - 1 , $w2 - 1 ) ; # -$_[2]の箇所は、一度足したものをここで引いたという無駄ありとも言える。
+  return "$W1:$N1 ~ $w1:$n1"  if $w1 == $w2 ; #return $n1 . (GREEN "($w1)")  if $w1 == $w2 ;
+  return "$W1:$N1 ~ $w1:$n1\t$W2:$N2 ~ $w2:$n2" ; #return $n1 . (GREEN "($w1)") . "\t" . $n2 . (GREEN "($w2)") 
+}
 
 my $head = <> if $o{'='} ; 
-
-my $last ; # 直前に読んだ行文字列
+my $last ; # 直前の行について、dualvar形式で、 dualvar $. , $str を格納。
 while( <> ) { 
   $_ = decode ($_) ;
   s/\s//g ; # chomp もしなくてよくなる。
   y/０-９/0-9/ unless ($o{u}//'') eq 0 ;  
   next if ! defined $last ;
-  my $gap = $_ - $last ;
-  $gd{ $gap } ++ ; 
+  my $gap = $_ - ($last.'') ;
+  $gd { $gap } ++ ; 
   $gdw1 { $gap } //= dualvar $. , $_ ;
   $gdw2 { $gap }   = dualvar $. , $_ ;
- 
+  next if ($o{L}//'') eq 0 ;
   my $str = $_ ; 
-  for ( uniq map { abs $_ } keys %gd  ) { 
+  for ( uniq map { abs $_ } keys %gd  ) { # $_ は「許容ギャップ」 となる。(間隙の絶対値)
     if ( abs $gap > $_ && defined $lc0 { $_ } ) 
     {
-      my $nondel = 0 ; 
-      if ( ! defined $lc { $_ } ) { push @{ $lc { $_ } } , $lc0 { $_ } ; } 
-      elsif ( $lc { $_ } [ 0 ] < $lc0 { $_ } )  {  @{ $lc { $_ } } = ( $lc0 { $_ } ) ; } # この左辺が長さ2以上でも1だけのものに置き換える。
-      elsif ( $lc { $_ } [ 0 ] == $lc0 { $_ } )  { push @{ $lc { $_ } } , $lc0 { $_ } ; }
-      else { $nondel = 1 ;  }
+      my $nondel = 0 ;
+      my $put = se ( $lc0 { $_ } , $last ) if defined $lc0 { $_ } ; 
+      if ( ! defined $lc { $_ } || $lc { $_ } [ 0 ] < $lc0 { $_ } ) { @{ $lc { $_ } } = ($put) } # $lc0 { $_ } 
+      elsif ( $lc { $_ } [ 0 ] == $lc0 { $_ } )  { push @{ $lc { $_ } } , $put } 
+      else { $nondel = 1 }
       $lc0 { $_ } = undef if $nondel == 0 ; 
     } 
     else
     {
-      $lc0 { $_ } = dualvar 0 , "$.:$str~" if ! defined $lc0 { $_ } ; 
-      $lc0 { $_ } = dualvar 1+$lc0{$_}, ''. $lc0{$_} ; # 前の行の本体が実行されて、数値として 0 の場合は 1になる。
+      $lc0 { $_ } = dualvar 0 , "$.:$str" if ! defined $lc0 { $_ } ; 
+      $lc0 { $_ } = dualvar 1 + $lc0 { $_ } , ''. $lc0 { $_ } ; # 前の行の本体が実行されて、数値として 0 の場合は 1になる。
     }
   }
 } continue {
-  $last = $_ ;
+  $last = dualvar $. , $_ ; #$_ ;
 } 
-#exit 0 ; 
-## 出力 : 
 
-# 出力1. Gapsの出力
-# gap と頻度
-#say join "\t", map { UNDERLINE $_ } 'Gaps:' , 'gap freq' , 'end line: contents (X first and last)' ; 
-say join "\t", map { UNDERLINE $_ } 'gap', 'frq' , 'first' , 'last (line:content by "start ~ end")' ; 
-for ( sort { $a <=> $b } keys %gd ) {
-  say join "\t" , $_ , $gd { $_ }, & ww ( $gdw1{$_} , $gdw2{$_} , $_ ) ; 
-}
-
-# longest length と max gap 
-say join "\t", map { UNDERLINE $_ }  "Chains:" , "max |gap|" , "longest sequence length: start line" ; 
-for ( sort {$a<=>$b} uniq map { abs $_ } keys %gd  ) { 
+& gap1output unless ($o{G}//'') eq 0 ; 
+exit 0 if ($o{L}//'') eq 0 ; 
+# 出力2. longest length と max gap 
+say join "\t", map { UNDERLINE $_ }  "|gap|<=" , "lenmax" , "line:content" ; 
+for ( sort { $a <=> $b } uniq map { abs $_ } keys %gd  ) { 
   my @chains = defined $lc{$_} ? @{ $lc {$_} } : () ; # それだけの $_ つまり max abs gap を持つものの、リストを取り出す。
-  #my @chains =  @{ $lc {$_} } ; 
   my $Length = defined $chains[0] ? $chains [0] + 0 : "NA" ; # 本当は(バグってなければ)、どの要素を取ってきても良い。その数値部分(dualvar) を取り出す。それは最長長さ。
-  say join "\t" , '' , $_ , $Length, map { $_ } @chains ; 
+  say join "\t" , $_ , $Length, map { $_ } @chains ; 
 }
 
-
-sub ww ( $$ $ ) { 
-  my ($n1,$n2,$w1,$w2) = ( $_[0].'' , $_[1].'' , $_[0]+0, $_[1]+0 ) ;
-  my ($N1,$N2,$W1,$W2) = ( $n1 - $_[2] , $n2 - $_[2] , $w1 - 1 , $w2 - 1 ) ; # -$_[2]の箇所は、一度足したものをここで引いたという無駄ありとも言える。
-  #return $n1 . (GREEN "($w1)")  if $w1 == $w2 ;
-  #return $n1 . (GREEN "($w1)") . "\t" . $n2 . (GREEN "($w2)") 
-  return "$W1:$N1 ~ $w1:$n1"  if $w1 == $w2 ;
-  return "$W1:$N1 ~ $w1:$n1\t$W2:$N2 ~ $w2:$n2" ;
+sub gap1output () { # 出力1. Gapsの出力 
+  say join "\t", map { UNDERLINE $_ } 'gap', 'frq' , 'first' , 'last (line:content by "start ~ end")' ; 
+  for ( sort { $a <=> $b } keys %gd ) {
+    say join "\t" , $_ , $gd { $_ }, & ww ( $gdw1{$_} , $gdw2{$_} , $_ ) ; 
+  }
 }
 
 END {
@@ -137,10 +135,16 @@ sub HELP_MESSAGE {
 オプション : 
 
  -=     : 1行目を読み飛ばす。
+ -G 0   : ギャップ(間隙)の統計表を出力しない。(2番目の表示を見やすくするため)
+ -L 0   ; 2番目の出力表(許容ギャップごとに数列の最大長とその例を示す)を出力しない。
  -R 1   : 改行文字が Windows 形式 すなわち \r\n に対応。
+ -u 0   : utf8と見なさない。全角の０から９までを数値と見なすことをしない(実験的であり今後の開発のために残す)。
+ -@ N   : N秒おきにどこまで読み取ったかを、標準エラー出力に出力する。
 
 開発メモ : 
-  * 昇順のみならず降順にも対応する。 -i で負の数を指定することで対応するかも。
-  * 全角文字に対しても対応したい。
-  * gapstat で無くて gapstat と名前を変えたい。
+  * 2番目の表で、ギャップが異なっても、残りが同じ表示になる場合に、一つにまとめる(大きい方のギャップの値に合わせる)ようにせよ。
+  * 2番目の表が、見ただけでもちょっと不具合有り。
+  * 元の表で動作をきちんと確かめよ。
+  * 他の表でも確かめたい。tsvファイルで。
+
 =cut
