@@ -85,7 +85,7 @@ while( <> ) {
 exit 0 if ($o{L}//'') eq 0 ; 
 
 # 出力2. longest length と max gap #### 
-say join "\t", map { UNDERLINE $_ }  "|gap|<=" , "lenmax" , "line:content" ; 
+say join "\t", map { UNDERLINE $_ }  "|gap|<=" , "maxlen" , "line:content" ; 
 for ( grep { $_ != "Inf" } sort { $a <=> $b } uniq map { abs $_ } keys %gd  ) { 
   my @chains = defined $lc{$_} ? @{ $lc {$_} } : () ; # それだけの $_ つまり max abs gap を持つものの、リストを取り出す。
   my $Length = defined $chains[0] ? $chains [0] +0 : "NA" ; # 本当は(バグってなければ)、どの要素を取ってきても良い。その数値部分(dualvar) を取り出す。それは最長長さ。
