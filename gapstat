@@ -67,7 +67,7 @@ while( <> ) {
     #my $max = max grep { abs $gap >= $_ } map { abs $_ } keys %gd ; # max 関数の対象が空であれば、返り値は undef となる。
     #$lc0 { abs $gap } = defined $max ? $lc0 { $max } : $lc0{Inf} ; # if defined $max ; 
     $lc0 { abs $gap } //= & d2 ( abs $gap ) ; 
-    print RED $gap ;
+    #print RED $gap ;
   }
 
   ULOOP : 
@@ -108,7 +108,7 @@ for ( grep { $_ != "Inf" } sort { $a <=> $b } uniq map { abs $_ } keys %gd  ) {
 }
 
 sub gap1output () { # 出力1. Gapsの出力 
-  say join "\t", map { UNDERLINE $_ } 'gap', 'freq' , 'first' , 'prev (line:content by "start ~ end")' ; 
+  say join "\t", map { UNDERLINE $_ } 'gap', 'freq' , 'first' , 'last (line:content by "start ~ end")' ; 
   for ( grep { $_ != "Inf" } sort { $a <=> $b } keys %gd ) {
     say join "\t" , f $_ , $gd { $_ }, & ww ( $gw1{$_} , $gw2{$_} ) ; 
   }
