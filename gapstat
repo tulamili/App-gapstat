@@ -58,7 +58,11 @@ while( <> ) {
 
   sub d2 ($) { 
     my $m = min grep { $_ > $_[0] } keys %g22 ;  
-    defined $m ? dualvar $.-$g22{$m} , sprintf "%g:%s",$g22{$m},$g22{$m} : dualvar -1+$., "1:$v1" ;
+    if ( defined $m ) { 
+      do { $gw1{$m} =~ m/(\d+):(.*) ~/ ; push @{ $lc{ $_[0] } } , dualvar $1 , "1:$v1 ~ $1:$2 " if defined $1 } ; 
+      return dualvar $. - $g22{$m} , sprintf "%g:%s",$g22{$m},$g22{$m} ; 
+    }
+    return dualvar -1+$., "1:$v1" ;
   } 
 
   #if ( ! defined $gap ) { $lc0 {Inf} = dualvar 1 , "$.:$str" ; $gd {Inf} = 0 ; next }  # $. の部分は 1 でも良いかも。 <-- - 
@@ -76,9 +80,9 @@ while( <> ) {
       sub se($$){ dualvar $_[0] , sprintf "%s ~ %s:%s" , $_[0].'', $_[1]+0, $_[1].'' } # 関数 start end のつもり。次でしか使わないので、ここに書いた。
       my $put = se $lc0{$_}, $prev ; # $lc0{gap}で[連続長,最初の場所:最初の値] 。$prevは[$.,$_]。つまり、返り値は、[連続長,初所:初値 ~ 終所:終値]。
       if ( !defined $lc{$_} || $lc{$_}[0] < $put ) {  @{ $lc{$_} } = ($put)  } # $lc{$_}が存在しないか、その中身が新しい連続長より短いなら、lc0で上書き。
-      #if ( !defined $lc{$_} || $lc{$_}[0] < $put ) {  push @{ $lc{$_} } , ($put)  } 
-      #elsif ( $lc{$_}[0] == $put )  { push @{ $lc{$_} } , $put } # $lc{$_}の中身について、連続長が $lc0{$_} に等しいなら、追加する。
-      elsif ( $lc{$_}[0] >= $put )  { push @{ $lc{$_} } , $put } 
+      #if ( !defined $lc{$_} || $lc{$_}[0] < $put ) {  push @{ $lc{$_} } , ($put)  }  # 前にあるものを残すようになる。無駄に長い出力となるであろう。
+      elsif ( $lc{$_}[0] == $put )  { push @{ $lc{$_} } , $put } # $lc{$_}の中身について、連続長が $lc0{$_} に等しいなら、追加する。
+      #elsif ( $lc{$_}[0] >= $put )  { push @{ $lc{$_} } , $put } # 少し長い出力となるであろう。
       undef $lc0 { $_ }  ; 
     }elsif ( $_ >= abs $gap ) {
       #$lc0 { $_ } = defined $lc0 { $_ } ? dualvar 1 + $lc0 { $_ } , $lc0 { $_ } : & d2 ($gap)  ;
